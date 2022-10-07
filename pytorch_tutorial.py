@@ -61,14 +61,14 @@ def main():
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'  # Attempt to use Metal hardware acceleration
     print(f'Using {device} device')
 
-    training_data = torchvision.datasets.FashionMNIST(
+    training_data = torchvision.datasets.MNIST(
         root="data",
         train=True,
         download=True,
         transform=torchvision.transforms.ToTensor()
     )
 
-    test_data = torchvision.datasets.FashionMNIST(
+    test_data = torchvision.datasets.MNIST(
         root="data",
         train=True,
         download=True,
@@ -92,7 +92,7 @@ def main():
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-    epochs = 2
+    epochs = 10
     for t in range(epochs):
         print(f'Epoch {t+1}\n----------------------')
         train(train_dataloader, model, loss_fn, optimizer, device)
@@ -104,3 +104,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# Reference https://github.com/AshwinRJ/Federated-Learning-PyTorch/blob/26eaec40fa8beb56777feb89756f6401c28c4736/src/update.py#L54
+# for building the federated learning implementation
