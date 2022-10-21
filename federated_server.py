@@ -66,7 +66,7 @@ def main():
     clients = []
     num_clients = 100
     for client_data in random_split(training_data, [len(training_data) // num_clients] * num_clients):
-        clients.append(federated_client.FederatedClient(client_data, 10, 20, device))
+        clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
 
     batch_size = 64
 
@@ -80,7 +80,7 @@ def main():
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    federated_server(test_dataloader, 50, loss_fn, clients, 0.01, device)
+    federated_server(test_dataloader, 50, loss_fn, clients, 0.1, device)
     
     # Probably can use state_dict to average models
     print('done')
