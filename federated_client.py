@@ -24,7 +24,7 @@ class FederatedClient:
         self.epochs = local_epochs
         self.model = NeuralNetwork().to(device)
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-3)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-1)
         self.device = device
     
     def train(self):

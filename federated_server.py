@@ -4,7 +4,8 @@ import random
 import torch
 import torch.backends.mps
 import torchvision
-from torch.utils.data import DataLoader, random_split
+import random
+from torch.utils.data import DataLoader, ConcatDataset, TensorDataset, random_split
 
 def federated_server(test_dataloader, rounds, loss_fn, clients, client_fraction, device):
     global_model = federated_client.NeuralNetwork().to(device)
@@ -19,16 +20,15 @@ def federated_server(test_dataloader, rounds, loss_fn, clients, client_fraction,
         for client in clients_for_round:
             update = client.client_update(global_state)
             for layer in new_global_state:
-                new_global_state[layer] += update[layer]
-        
-        for layer in new_global_state:
-            new_global_state[layer] /= num_clients
+                new_global_state[layer] += update[layer] / num_clients
         
         global_state = new_global_state
 
         # Test new model
         global_model.load_state_dict(global_state)
-        test(test_dataloader, global_model, loss_fn, device)
+        print(f'Round {i}')
+        if i % 10 == 9:
+            test(test_dataloader, global_model, loss_fn, device)
 
 def test(dataloader, model, loss_fn, device):
     size = len(dataloader.dataset)
@@ -44,6 +44,25 @@ def test(dataloader, model, loss_fn, device):
     test_loss /= num_batches
     correct /= size
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+
+def iid_clients(training_data, num_clients, device):
+    clients = []
+    for client_data in random_split(training_data, [len(training_data) // num_clients] * num_clients):
+        clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
+    return clients
+
+def non_iid_clients(training_data, num_clients, device):
+    clients = []
+    sorted_data = sorted(training_data, key=lambda example: example[1])
+    num_shards = num_clients * 2
+    shard_size = len(sorted_data) // num_shards
+    shards = [sorted_data[i:i + len(sorted_data) // (num_clients * 2)] for i in range(0, len(sorted_data), shard_size)]
+    random.shuffle(shards)
+    for shard1, shard2 in zip(shards[0::2], shards[1::2]):
+        client_data = ConcatDataset([*shard1, *shard2])
+        clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
+    return clients
+
 
 def main():
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'  # Attempt to use Metal hardware acceleration
@@ -63,10 +82,8 @@ def main():
         transform=torchvision.transforms.ToTensor()
     )
 
-    clients = []
     num_clients = 100
-    for client_data in random_split(training_data, [len(training_data) // num_clients] * num_clients):
-        clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
+    clients = iid_clients(training_data, num_clients, device)
 
     batch_size = 64
 
@@ -80,7 +97,7 @@ def main():
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    federated_server(test_dataloader, 50, loss_fn, clients, 0.1, device)
+    federated_server(test_dataloader, 100, loss_fn, clients, 0.1, device)
     
     # Probably can use state_dict to average models
     print('done')
