@@ -1,10 +1,12 @@
 from http import client
 import federated_client
+import random_client
 import random
 import torch
 import torch.backends.mps
 import torchvision
 import random
+import itertools
 from torch.utils.data import DataLoader, ConcatDataset, TensorDataset, random_split
 
 def federated_server(test_dataloader, rounds, loss_fn, clients, client_fraction, device):
@@ -58,11 +60,18 @@ def non_iid_clients(training_data, num_clients, device):
     shard_size = len(sorted_data) // num_shards
     shards = [sorted_data[i:i + len(sorted_data) // (num_clients * 2)] for i in range(0, len(sorted_data), shard_size)]
     random.shuffle(shards)
-    for shard1, shard2 in zip(shards[0::2], shards[1::2]):
-        client_data = ConcatDataset([*shard1, *shard2])
+    for shards in zip(shards[0::2], shards[1::2]):
+        X = torch.stack([data[0] for data in itertools.chain(*shards)])
+        y = torch.tensor([data[1] for data in itertools.chain(*shards)])
+        client_data = TensorDataset(X, y)
         clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
     return clients
 
+def random_iid_clients(training_data, num_clients, num_random_clients, device):
+    clients = iid_clients(training_data, num_clients, device)
+    for i in range(num_random_clients):
+        clients[i] = random_client.RandomClient(device)
+    return clients
 
 def main():
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'  # Attempt to use Metal hardware acceleration
@@ -83,7 +92,7 @@ def main():
     )
 
     num_clients = 100
-    clients = iid_clients(training_data, num_clients, device)
+    clients = random_iid_clients(training_data, num_clients, num_clients // 2, device)
 
     batch_size = 64
 
@@ -97,7 +106,7 @@ def main():
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    federated_server(test_dataloader, 100, loss_fn, clients, 0.1, device)
+    federated_server(test_dataloader, 1000, loss_fn, clients, 0.1, device)
     
     # Probably can use state_dict to average models
     print('done')
