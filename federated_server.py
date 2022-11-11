@@ -86,7 +86,7 @@ def main():
 
     test_data = torchvision.datasets.MNIST(
         root="data",
-        train=True,
+        train=False,
         download=True,
         transform=torchvision.transforms.ToTensor()
     )
