@@ -1,4 +1,4 @@
-from federated_client import FederatedClient
+from federated_client import FederatedClient, ClientUpdate
 import torch
 
 class RandomClient(FederatedClient):
@@ -16,4 +16,4 @@ class RandomClient(FederatedClient):
 
             # Randomize weights to Gaussian noise with mean, standard deviation matching the layer
             new_state[layer] = torch.randn(weights.size()).to(self.device) * torch.std(weights) + torch.mean(weights)
-        return new_state
+        return ClientUpdate(new_state, state_dict, 100)  # TODO: Allow local dataset size to be configured

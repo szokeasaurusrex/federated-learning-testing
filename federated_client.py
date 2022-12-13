@@ -18,8 +18,17 @@ class NeuralNetwork(torch.nn.Module):
         logits = self.linear_relu_stack(x)
         return logits
 
+class ClientUpdate:
+    def __init__(self, updated_local_state, global_state, local_dataset_size):
+        self.updated_state = updated_local_state
+        self.local_dataset_size = local_dataset_size
+        self.update = updated_local_state.copy()
+        for layer in self.update:
+            self.update[layer] -= global_state[layer]
+
 class FederatedClient:
     def __init__(self, local_data, local_epochs, local_batches, device):
+        self.dataset_size = len(local_data)
         self.data_loader = DataLoader(local_data, batch_size=len(local_data) // local_batches)
         self.epochs = local_epochs
         self.model = NeuralNetwork().to(device)
@@ -43,4 +52,4 @@ class FederatedClient:
         self.model.load_state_dict(state_dict)
         for _ in range(self.epochs):
             self.train()
-        return self.model.state_dict()
+        return ClientUpdate(self.model.state_dict(), state_dict, self.dataset_size)
