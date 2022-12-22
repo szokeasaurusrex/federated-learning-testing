@@ -7,14 +7,12 @@ import math
 class FedAvgAggregator:
     def aggregate(self, global_model_state, client_updates):
         new_global_state = global_model_state.copy()
-        for layer in new_global_state:
-            new_global_state[layer] = 0
         
         global_dataset_size = sum(client_update.local_dataset_size for client_update in client_updates)
 
         for client_update in client_updates:
             for layer in new_global_state:
-                new_global_state[layer] += client_update.local_dataset_size * client_update.updated_state[layer] / global_dataset_size
+                new_global_state[layer] += client_update.local_dataset_size * client_update.update[layer] / global_dataset_size
         
         return new_global_state
 
