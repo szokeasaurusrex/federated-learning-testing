@@ -68,12 +68,15 @@ def main():
         transform=torchvision.transforms.ToTensor()
     )
 
+    training_data, val_data = random_split(training_data, [0.8, 0.2])
+
     num_clients = 100
-    clients = random_iid_clients(training_data, num_clients, num_clients // 4, device)
+    clients = iid_clients(training_data, num_clients, device)
 
     batch_size = 64
 
     test_dataloader = DataLoader(test_data, batch_size=batch_size)
+    val_dataloader = DataLoader(val_data, batch_size=batch_size)
 
     for X, y in test_dataloader:
         print(f"Shape of X [N, C, H, W]: {X.shape}")
@@ -88,7 +91,7 @@ def main():
     for _ in range(10):
         server.train(10)
         print(f'Epoch {server.epoch}')
-        test(test_dataloader, server.global_model, constants.loss_fn, constants.device)
+        test(val_dataloader, server.global_model, constants.loss_fn, constants.device)
     
     # Probably can use state_dict to average models
     print('done')
