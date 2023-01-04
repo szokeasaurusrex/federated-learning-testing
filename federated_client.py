@@ -36,20 +36,35 @@ class FederatedClient:
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-1)
         self.device = device
     
-    def train(self):
+    def train(self, training_loss_fn=None):
+        training_loss_fn = training_loss_fn if training_loss_fn is not None else self.loss_fn
         self.model.train()
         for (X, y) in self.data_loader:
             X, y = X.to(self.device), y.to(self.device)
 
             pred = self.model(X)
-            loss = self.loss_fn(pred, y)
+            loss = training_loss_fn(pred, y)
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
     
-    def client_update(self, state_dict):
+    def client_update(self, state_dict, *training_args):
         self.model.load_state_dict(state_dict)
         for _ in range(self.epochs):
-            self.train()
+            self.train(*training_args)
         return ClientUpdate(self.model.state_dict(), state_dict, self.dataset_size)
+
+
+class LabelFlipMaliciousClient:
+    def __init__(self, client: FederatedClient):
+        self.underlying_client = client
+    
+    def loss_fn(self, predicted, actual):
+        return self.underlying_client.loss_fn(predicted, torch.randint(10, size=actual.size()).to(self.underlying_client.device))
+    
+    def train(self):
+        self.underlying_client.train(self.loss_fn)
+    
+    def client_update(self, state_dict):
+        return self.underlying_client.client_update(state_dict, self.loss_fn)

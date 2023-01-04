@@ -73,6 +73,9 @@ def main():
     num_clients = 100
     clients = iid_clients(training_data, num_clients, device)
 
+    for i in range(0):
+        clients[i] = federated_client.LabelFlipMaliciousClient(clients[i])
+
     batch_size = 64
 
     test_dataloader = DataLoader(test_data, batch_size=batch_size)
@@ -86,7 +89,7 @@ def main():
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    server = federated_server.FederatedServer(clients, 0.1, federated_server.FedAvgAggregator())
+    server = federated_server.FederatedServer(clients, 0.1, federated_server.StaticNormClipAggregator(1))
 
     for _ in range(10):
         server.train(10)
