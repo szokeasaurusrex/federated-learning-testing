@@ -4,6 +4,10 @@ import random
 import torch
 import math
 
+
+def update_norm(update):
+    return math.sqrt(sum(torch.linalg.norm(update[layer]) ** 2 for layer in update))
+
 class FedAvgAggregator:
     def aggregate(self, global_model_state, client_updates):
         new_global_state = global_model_state.copy()
@@ -19,21 +23,35 @@ class FedAvgAggregator:
 class StaticNormClipAggregator:
     def __init__(self, clip_threshold):
         self.clip_threshold = clip_threshold
-    
-    def update_norm(self, update):
-        return math.sqrt(sum(torch.linalg.norm(update[layer]) ** 2 for layer in update))
-    
+       
     def aggregate(self, global_model_state, client_updates):
         new_global_state = global_model_state.copy()        
         global_dataset_size = sum(client_update.local_dataset_size for client_update in client_updates)
 
         for client_update in client_updates:
-            norm = self.update_norm(client_update.update)
+            norm = update_norm(client_update.update)
+            if math.isnan(norm):
+                continue
+
             norm_clipping_factor = min(1, self.clip_threshold / norm)
             for layer in new_global_state:
                 new_global_state[layer] += norm_clipping_factor * client_update.local_dataset_size * client_update.update[layer] / global_dataset_size
         
         return new_global_state
+
+class DynamicNormClipAggregator:
+    def __init__(self, initial_clip_threshold):
+        self.static_aggregator = StaticNormClipAggregator(initial_clip_threshold)
+        self.current_threshold = initial_clip_threshold
+    
+    def aggregate(self, global_model_state, client_updates):
+        update_norms = torch.tensor([update_norm(update.update) for update in client_updates])
+        dynamic_threshold = torch.quantile(update_norms, constants.dynamic_clip_probability_threshold)
+        if dynamic_threshold < self.current_threshold:
+            self.static_aggregator = StaticNormClipAggregator(dynamic_threshold)
+            self.current_threshold = dynamic_threshold
+        
+        return self.static_aggregator.aggregate(global_model_state, client_updates)
 
 class FederatedServer:
     def __init__(self, clients, client_fraction, aggregator):

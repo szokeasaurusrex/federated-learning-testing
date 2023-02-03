@@ -33,11 +33,13 @@ class FederatedClient:
         self.epochs = local_epochs
         self.model = NeuralNetwork().to(device)
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-1)
+        self.lr = 1e-1
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
         self.device = device
     
-    def train(self, training_loss_fn=None):
+    def train(self, training_loss_fn=None, optimizer=None):
         training_loss_fn = training_loss_fn if training_loss_fn is not None else self.loss_fn
+        optimizer = optimizer if optimizer is not None else self.optimizer
         self.model.train()
         for (X, y) in self.data_loader:
             X, y = X.to(self.device), y.to(self.device)
@@ -45,9 +47,9 @@ class FederatedClient:
             pred = self.model(X)
             loss = training_loss_fn(pred, y)
 
-            self.optimizer.zero_grad()
+            optimizer.zero_grad()
             loss.backward()
-            self.optimizer.step()
+            optimizer.step()
     
     def client_update(self, state_dict, *training_args):
         self.model.load_state_dict(state_dict)
@@ -67,4 +69,17 @@ class LabelFlipMaliciousClient:
         self.underlying_client.train(self.loss_fn)
     
     def client_update(self, state_dict):
-        return self.underlying_client.client_update(state_dict, self.loss_fn)
+        update = self.underlying_client.client_update(state_dict, self.loss_fn)
+        return update
+
+class GradientAscentMaliciousClient:
+    def __init__(self, client: FederatedClient):
+        self.underlying_client = client
+        self.optimizer = torch.optim.SGD(self.underlying_client.model.parameters(), lr=0.01, maximize=True)
+    
+    def train(self):
+        self.underlying_client.train(None, self.optimizer)
+    
+    def client_update(self, state_dict):
+        update = self.underlying_client.client_update(state_dict, None, self.optimizer)
+        return update

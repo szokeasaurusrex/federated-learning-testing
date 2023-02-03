@@ -71,10 +71,13 @@ def main():
     training_data, val_data = random_split(training_data, [0.8, 0.2])
 
     num_clients = 100
-    clients = iid_clients(training_data, num_clients, device)
+    clients = non_iid_clients(training_data, num_clients, device)
 
-    for i in range(0):
-        clients[i] = federated_client.LabelFlipMaliciousClient(clients[i])
+    for i in range(num_clients // 5):
+        clients[i] = random_client.RandomClient(device)
+    
+    # for i in range(num_clients // 3):
+    #     clients.append(random_client.RandomClient(device))
 
     batch_size = 64
 
@@ -91,7 +94,7 @@ def main():
 
     server = federated_server.FederatedServer(clients, 0.1, federated_server.StaticNormClipAggregator(1))
 
-    for _ in range(10):
+    for _ in range(20):
         server.train(10)
         print(f'Epoch {server.epoch}')
         test(val_dataloader, server.global_model, constants.loss_fn, constants.device)
