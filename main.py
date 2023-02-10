@@ -44,13 +44,16 @@ def non_iid_clients(training_data, num_clients, device):
         clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
     return clients
 
-def collusive_attack_clients(training_data, num_clients, adversarial_fraction, device):
-    clients = []
-    sorted_data = sorted(training_data, key=lambda example: example[1])
-    num_shards = num_clients * 2
+def make_shards(data, num_shards):
+    sorted_data = sorted(data, key=lambda example: example[1])
     shard_size = len(sorted_data) // num_shards
-    shards = [sorted_data[i:i + len(sorted_data) // (num_clients * 2)] for i in range(0, len(sorted_data), shard_size)]
+    shards = [sorted_data[i:i + len(sorted_data) // num_shards] for i in range(0, len(sorted_data), shard_size)]
     random.shuffle(shards)
+
+    return shards
+
+def collusive_attack_clients(shards, num_clients, adversarial_fraction, device):
+    clients = []
 
     # Shuffle data for adversarial clients
     num_adversarial_clients = int(adversarial_fraction * num_clients)
@@ -97,7 +100,16 @@ def main():
     training_data, val_data = random_split(training_data, [0.8, 0.2])
 
     num_clients = 100
-    clients = collusive_attack_clients(training_data, num_clients, 0.25,  device)
+    adversarial_fraction = 0.25
+
+    shards = make_shards(training_data, num_clients * 2)
+    benign_clients = collusive_attack_clients(shards, num_clients, 0,  device)
+
+    non_collusive_clients = collusive_attack_clients(shards, num_clients, 0, device)
+    for i, client in enumerate(non_collusive_clients[:int(num_clients * adversarial_fraction)]):
+        non_collusive_clients[i] = federated_client.GradientAscentMaliciousClient(client)
+    
+    collusive_clients = collusive_attack_clients(shards, num_clients, adversarial_fraction, device)
 
     # for i in range(num_clients // 4):
     #     clients[i] = random_client.RandomClient(device)
@@ -118,12 +130,19 @@ def main():
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    server = federated_server.FederatedServer(clients, 0.1, federated_server.DynamicNormClipAggregator(1))
+    runs = {
+        'non-collusive': non_collusive_clients,
+        'collusive': collusive_clients,
+        'benign': benign_clients,
+    }
 
-    for _ in range(20):
-        server.train(10)
-        print(f'Epoch {server.epoch}')
-        test(val_dataloader, server.global_model, constants.loss_fn, constants.device)
+    for run_title, clients in runs.items():
+        print(f'+++++++ {run_title} ++++++++')
+        server = federated_server.FederatedServer(clients, 0.1, federated_server.FedAvgAggregator())
+        for _ in range(20):
+            server.train(10)
+            print(f'Epoch {server.epoch}')
+            test(val_dataloader, server.global_model, constants.loss_fn, constants.device)
     
     # Probably can use state_dict to average models
     print('done')
