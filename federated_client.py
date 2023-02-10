@@ -75,11 +75,12 @@ class LabelFlipMaliciousClient:
 class GradientAscentMaliciousClient:
     def __init__(self, client: FederatedClient):
         self.underlying_client = client
-        self.optimizer = torch.optim.SGD(self.underlying_client.model.parameters(), lr=0.01, maximize=True)
     
     def train(self):
-        self.underlying_client.train(None, self.optimizer)
+        self.underlying_client.train()
     
     def client_update(self, state_dict):
-        update = self.underlying_client.client_update(state_dict, None, self.optimizer)
+        update = self.underlying_client.client_update(state_dict)
+        for layer in update.update:
+            update.update[layer] = -update.update[layer]
         return update

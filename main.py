@@ -44,6 +44,32 @@ def non_iid_clients(training_data, num_clients, device):
         clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
     return clients
 
+def collusive_attack_clients(training_data, num_clients, adversarial_fraction, device):
+    clients = []
+    sorted_data = sorted(training_data, key=lambda example: example[1])
+    num_shards = num_clients * 2
+    shard_size = len(sorted_data) // num_shards
+    shards = [sorted_data[i:i + len(sorted_data) // (num_clients * 2)] for i in range(0, len(sorted_data), shard_size)]
+    random.shuffle(shards)
+
+    # Shuffle data for adversarial clients
+    num_adversarial_clients = int(adversarial_fraction * num_clients)
+    if num_adversarial_clients > 0:
+        adversarial_data = list(itertools.chain(*shards[:2 * num_adversarial_clients]))
+        adversarial_X = torch.stack([data[0] for data in adversarial_data])
+        adversarial_y = torch.tensor([data[1] for data in adversarial_data])
+        adversarial_dataset = TensorDataset(adversarial_X, adversarial_y)
+        for client_data in random_split(adversarial_dataset, [len(adversarial_dataset) // num_adversarial_clients] * num_adversarial_clients):
+            clients.append(federated_client.GradientAscentMaliciousClient(federated_client.FederatedClient(client_data, 1, 60, device)))
+
+    # Remaining benign clients get non-iid shards
+    for shard in zip(shards[2 * num_adversarial_clients::2], shards[2 * num_adversarial_clients + 1::2]):
+        X = torch.stack([data[0] for data in itertools.chain(*shard)])
+        y = torch.tensor([data[1] for data in itertools.chain(*shard)])
+        client_data = TensorDataset(X, y)
+        clients.append(federated_client.FederatedClient(client_data, 1, 60, device))
+    return clients
+
 def random_iid_clients(training_data, num_clients, num_random_clients, device):
     clients = iid_clients(training_data, num_clients, device)
     for i in range(num_random_clients):
@@ -71,10 +97,10 @@ def main():
     training_data, val_data = random_split(training_data, [0.8, 0.2])
 
     num_clients = 100
-    clients = non_iid_clients(training_data, num_clients, device)
+    clients = collusive_attack_clients(training_data, num_clients, 0.25,  device)
 
-    for i in range(num_clients // 5):
-        clients[i] = random_client.RandomClient(device)
+    # for i in range(num_clients // 4):
+    #     clients[i] = random_client.RandomClient(device)
     
     # for i in range(num_clients // 3):
     #     clients.append(random_client.RandomClient(device))
@@ -92,7 +118,7 @@ def main():
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    server = federated_server.FederatedServer(clients, 0.1, federated_server.StaticNormClipAggregator(1))
+    server = federated_server.FederatedServer(clients, 0.1, federated_server.DynamicNormClipAggregator(1))
 
     for _ in range(20):
         server.train(10)
