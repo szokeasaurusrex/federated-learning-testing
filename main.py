@@ -7,6 +7,9 @@ import torchvision
 import random
 import itertools
 import constants
+import json
+import csv
+import datetime
 from torch.utils.data import DataLoader, ConcatDataset, TensorDataset, random_split
 
 def test(dataloader, model, loss_fn, device):
@@ -23,6 +26,7 @@ def test(dataloader, model, loss_fn, device):
     test_loss /= num_batches
     correct /= size
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+    return correct
 
 def iid_clients(training_data, num_clients, device):
     clients = []
@@ -79,6 +83,53 @@ def random_iid_clients(training_data, num_clients, num_random_clients, device):
         clients[i] = random_client.RandomClient(device)
     return clients
 
+def run_experiments_with_aggregator(shards, aggregator_getter, test_data, val_data):
+    num_clients = constants.num_clients
+    adversarial_fraction = constants.adversarial_fraction
+    device = constants.device
+
+    benign_clients = collusive_attack_clients(shards, num_clients, 0,  device)
+
+    non_collusive_clients = collusive_attack_clients(shards, num_clients, 0, device)
+    for i, client in enumerate(non_collusive_clients[:int(num_clients * adversarial_fraction)]):
+        non_collusive_clients[i] = federated_client.GradientAscentMaliciousClient(client)
+    
+    random_attack_clients = collusive_attack_clients(shards, num_clients, 0, device)
+    for i, client in enumerate(random_attack_clients[:int(num_clients * adversarial_fraction)]):
+        random_attack_clients[i] = random_client.RandomClient(device)
+    
+    collusive_clients = collusive_attack_clients(shards, num_clients, adversarial_fraction, device)
+
+    batch_size = 64
+
+    test_dataloader = DataLoader(test_data, batch_size=batch_size)
+    val_dataloader = DataLoader(val_data, batch_size=batch_size)
+
+    for X, y in test_dataloader:
+        print(f"Shape of X [N, C, H, W]: {X.shape}")
+        print(f"Shape of y: {y.shape} {y.dtype}")
+        break
+
+    runs = {
+        'collusive': collusive_clients,
+        'random': random_attack_clients,
+        'non-collusive': non_collusive_clients,
+        'benign': benign_clients,
+    }
+
+    results = dict()
+
+    for run_title, clients in runs.items():
+        aggregator = aggregator_getter()
+        results[run_title] = dict()
+        print(f'+++++++ {run_title} ++++++++')
+        server = federated_server.FederatedServer(clients, 0.1, aggregator)
+        for _ in range(40):
+            server.train(20)
+            print(f'Epoch {server.epoch}')
+            results[run_title][server.epoch] = test(val_dataloader, server.global_model, constants.loss_fn, constants.device)
+    return results
+
 def main():
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'  # Attempt to use Metal hardware acceleration
     print(f'Using {device} device')
@@ -103,47 +154,27 @@ def main():
     adversarial_fraction = 0.25
 
     shards = make_shards(training_data, num_clients * 2)
-    benign_clients = collusive_attack_clients(shards, num_clients, 0,  device)
-
-    non_collusive_clients = collusive_attack_clients(shards, num_clients, 0, device)
-    for i, client in enumerate(non_collusive_clients[:int(num_clients * adversarial_fraction)]):
-        non_collusive_clients[i] = federated_client.GradientAscentMaliciousClient(client)
     
-    collusive_clients = collusive_attack_clients(shards, num_clients, adversarial_fraction, device)
-
-    # for i in range(num_clients // 4):
-    #     clients[i] = random_client.RandomClient(device)
-    
-    # for i in range(num_clients // 3):
-    #     clients.append(random_client.RandomClient(device))
-
-    batch_size = 64
-
-    test_dataloader = DataLoader(test_data, batch_size=batch_size)
-    val_dataloader = DataLoader(val_data, batch_size=batch_size)
-
-    for X, y in test_dataloader:
-        print(f"Shape of X [N, C, H, W]: {X.shape}")
-        print(f"Shape of y: {y.shape} {y.dtype}")
-        break
-    
-
-    loss_fn = torch.nn.CrossEntropyLoss()
-
-    runs = {
-        'non-collusive': non_collusive_clients,
-        'collusive': collusive_clients,
-        'benign': benign_clients,
+    aggregator_getters = {
+        'fed_avg': lambda: federated_server.FedAvgAggregator(),
+        'static_norm_clip': lambda: federated_server.StaticNormClipAggregator(1),
+        'dynamic_norm_clip': lambda: federated_server.DynamicNormClipAggregator(1),
     }
 
-    for run_title, clients in runs.items():
-        print(f'+++++++ {run_title} ++++++++')
-        server = federated_server.FederatedServer(clients, 0.1, federated_server.FedAvgAggregator())
-        for _ in range(20):
-            server.train(10)
-            print(f'Epoch {server.epoch}')
-            test(val_dataloader, server.global_model, constants.loss_fn, constants.device)
+    results = dict()
+
+    for aggregator_title, aggregator_getter in aggregator_getters.items():
+        print(f'======================{aggregator_title}=======================')
+        results[aggregator_title] = run_experiments_with_aggregator(shards, aggregator_getter, test_data, val_data)
     
+    timestamp = datetime.datetime.utcnow().isoformat()
+
+    with open(f'output_{timestamp}.json', 'w') as f:
+        json.dump(results, f)
+    
+    # with open(f'output_{timestamp}.csv') as f:
+    #     csv_writer = csv.DictWriter() # TODO: Continue here
+
     # Probably can use state_dict to average models
     print('done')
 
