@@ -1,4 +1,5 @@
 import torch
+import constants
 from torch.utils.data import DataLoader
 
 class NeuralNetwork(torch.nn.Module):
@@ -33,7 +34,7 @@ class FederatedClient:
         self.epochs = local_epochs
         self.model = NeuralNetwork().to(device)
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.lr = 1e-1
+        self.lr = constants.learning_rate
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
         self.device = device
     
