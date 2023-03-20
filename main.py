@@ -112,7 +112,7 @@ def run_experiments_with_aggregator(shards, aggregator_getter, test_data, val_da
 
     runs = {
         'collusive': collusive_clients,
-        'random': random_attack_clients,
+        #'random': random_attack_clients,
         'non-collusive': non_collusive_clients,
         'benign': benign_clients,
     }
@@ -123,9 +123,9 @@ def run_experiments_with_aggregator(shards, aggregator_getter, test_data, val_da
         aggregator = aggregator_getter()
         results[run_title] = dict()
         print(f'+++++++ {run_title} ++++++++')
-        server = federated_server.FederatedServer(clients, 0.1, aggregator)
-        for _ in range(40):
-            server.train(20)
+        server = federated_server.FederatedServer(clients, 0.1, aggregator, federated_server.FederatedServer.exponential_lr_scheduler_generator(0.99))
+        for _ in range(50):
+            server.train(10)
             print(f'Epoch {server.epoch}')
             results[run_title][server.epoch] = test(val_dataloader, server.global_model, constants.loss_fn, constants.device)
     return results

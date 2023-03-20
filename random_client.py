@@ -8,7 +8,7 @@ class RandomClient(FederatedClient):
     def train(self):
         pass
     
-    def client_update(self, state_dict):
+    def client_update(self, state_dict, _):
         new_state = state_dict.copy()
         for layer, weights in state_dict.items():
             # # Randomize new state to uniform values between -0.2 and 0.2.

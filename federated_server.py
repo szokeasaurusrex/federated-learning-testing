@@ -54,18 +54,32 @@ class DynamicNormClipAggregator:
         return self.static_aggregator.aggregate(global_model_state, client_updates)
 
 class FederatedServer:
-    def __init__(self, clients, client_fraction, aggregator):
+    @staticmethod
+    def constant_lr_scheduler(_):
+        return constants.learning_rate
+    
+    @staticmethod
+    def one_over_n_lr_scheduler(epoch):
+        return constants.learning_rate / (epoch + 1)
+    
+    @staticmethod
+    def exponential_lr_scheduler_generator(multiplier):
+        return lambda epoch: constants.learning_rate * (multiplier ** epoch)
+
+    def __init__(self, clients, client_fraction, aggregator, lr_scheduler):
         self.clients = clients
         self.aggregator = aggregator
         self.clients_per_epoch = int(len(clients) * client_fraction)
         self.global_model = federated_client.NeuralNetwork().to(constants.device)
         self.global_model_state = self.global_model.state_dict()
-        self.epoch = 0        
+        self.epoch = 0
+        self.scheduler = lr_scheduler
 
     def train(self, epochs):
         """Train given number of epochs"""
         for _ in range(epochs):
-            client_updates = [client.client_update(self.global_model_state) for client in random.sample(self.clients, self.clients_per_epoch)]
+            lr = self.scheduler(self.epoch)
+            client_updates = [client.client_update(self.global_model_state, lr) for client in random.sample(self.clients, self.clients_per_epoch)]
             self.global_model_state = self.aggregator.aggregate(self.global_model_state, client_updates)
             self.global_model.load_state_dict(self.global_model_state)
             self.epoch += 1

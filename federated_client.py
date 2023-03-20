@@ -34,13 +34,10 @@ class FederatedClient:
         self.epochs = local_epochs
         self.model = NeuralNetwork().to(device)
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.lr = constants.learning_rate
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr)
         self.device = device
     
-    def train(self, training_loss_fn=None, optimizer=None):
+    def train(self, optimizer, training_loss_fn=None):
         training_loss_fn = training_loss_fn if training_loss_fn is not None else self.loss_fn
-        optimizer = optimizer if optimizer is not None else self.optimizer
         self.model.train()
         for (X, y) in self.data_loader:
             X, y = X.to(self.device), y.to(self.device)
@@ -52,36 +49,38 @@ class FederatedClient:
             loss.backward()
             optimizer.step()
     
-    def client_update(self, state_dict, *training_args):
+    def client_update(self, state_dict, lr, *training_args):
         self.model.load_state_dict(state_dict)
+        optimizer = torch.optim.SGD(self.model.parameters(), lr=lr)
+
         for _ in range(self.epochs):
-            self.train(*training_args)
+            self.train(optimizer, *training_args)
         return ClientUpdate(self.model.state_dict(), state_dict, self.dataset_size)
 
-
-class LabelFlipMaliciousClient:
-    def __init__(self, client: FederatedClient):
-        self.underlying_client = client
+# No longer works with how lr is set.
+# class LabelFlipMaliciousClient:
+#     def __init__(self, client: FederatedClient):
+#         self.underlying_client = client
     
-    def loss_fn(self, predicted, actual):
-        return self.underlying_client.loss_fn(predicted, torch.randint(10, size=actual.size()).to(self.underlying_client.device))
+#     def loss_fn(self, predicted, actual):
+#         return self.underlying_client.loss_fn(predicted, torch.randint(10, size=actual.size()).to(self.underlying_client.device))
     
-    def train(self):
-        self.underlying_client.train(self.loss_fn)
+#     def train(self):
+#         self.underlying_client.train(self.loss_fn)
     
-    def client_update(self, state_dict):
-        update = self.underlying_client.client_update(state_dict, self.loss_fn)
-        return update
+#     def client_update(self, state_dict):
+#         update = self.underlying_client.client_update(state_dict, self.loss_fn)
+#         return update
 
 class GradientAscentMaliciousClient:
     def __init__(self, client: FederatedClient):
         self.underlying_client = client
     
-    def train(self):
-        self.underlying_client.train()
+    def train(self, optimizer):
+        self.underlying_client.train(optimizer)
     
-    def client_update(self, state_dict):
-        update = self.underlying_client.client_update(state_dict)
+    def client_update(self, state_dict, lr):
+        update = self.underlying_client.client_update(state_dict, lr)
         for layer in update.update:
             update.update[layer] = -update.update[layer]
         return update
